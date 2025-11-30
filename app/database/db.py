@@ -11,3 +11,18 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
+
+
+def get_db():
+    """
+    FastAPI dependency için database session döndürür.
+    Her request'te yeni session açar, bitince kapatır.
+    
+    Yields:
+        db: Database session
+    """
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
