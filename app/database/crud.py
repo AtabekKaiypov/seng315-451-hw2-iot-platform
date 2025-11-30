@@ -4,7 +4,7 @@ from typing import List, Optional
 from datetime import datetime
 
 from app.database import models
-from app.main import SensorReadingIn
+from app.schemas import SensorReadingIn
 
 
 def create_sensor_reading(db: Session, reading: SensorReadingIn) -> models.SensorReading:

@@ -1,12 +1,11 @@
-from datetime import datetime
-from typing import List, Optional
+from typing import List
 
 from fastapi import FastAPI, HTTPException, Depends
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database.db import get_db, Base, engine
 from app.database import crud, models
+from app.schemas import SensorReadingIn, SensorReadingOut, AverageResponse
 
 app = FastAPI(
     title="IoT Sensor Data Collection Platform - API Layer",
@@ -20,29 +19,6 @@ def startup_event():
     Uygulama başlarken veritabanı tablolarını oluşturur.
     """
     Base.metadata.create_all(bind=engine)
-
-# -----------------------------
-#  Pydantic modelleri (REST)
-# -----------------------------
-
-class SensorReadingIn(BaseModel):
-    sensor_id: str
-    sensor_type: str
-    value: float
-    timestamp: Optional[datetime] = None
-
-
-class SensorReadingOut(BaseModel):
-    id: int
-    sensor_id: str
-    sensor_type: str
-    value: float
-    timestamp: datetime
-
-
-class AverageResponse(BaseModel):
-    sensor_type: str
-    average: Optional[float]
 
 
 # ----------------------------------------
