@@ -1,4 +1,5 @@
 from typing import List
+import logging
 
 from fastapi import FastAPI, HTTPException, Depends
 from sqlalchemy.orm import Session
@@ -6,6 +7,11 @@ from sqlalchemy.orm import Session
 from app.database.db import get_db, Base, engine
 from app.database import crud, models
 from app.schemas import SensorReadingIn, SensorReadingOut, AverageResponse
+from app.messaging import producer
+
+# Logging ayarları
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="IoT Sensor Data Collection Platform - API Layer",
@@ -14,11 +20,28 @@ app = FastAPI(
 
 
 @app.on_event("startup")
-def startup_event():
+async def startup_event():
     """
-    Uygulama başlarken veritabanı tablolarını oluşturur.
+    Uygulama başlarken veritabanı tablolarını oluşturur ve Kafka producer'ı başlatır.
     """
     Base.metadata.create_all(bind=engine)
+    
+    # Kafka Producer'ı başlat
+    try:
+        await producer.start_producer()
+        logger.info("Kafka Producer başarıyla başlatıldı")
+    except Exception as e:
+        logger.error(f"Kafka Producer başlatılamadı: {e}")
+        logger.warning("API devam edecek ama Kafka entegrasyonu çalışmıyor!")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """
+    Uygulama kapanırken Kafka producer'ı durdurur.
+    """
+    await producer.stop_producer()
+    logger.info("Kafka Producer durduruldu")
 
 
 # ----------------------------------------
@@ -82,10 +105,34 @@ def root():
 
 
 @app.post("/sensor/readings", response_model=SensorReadingOut)
-def create_sensor_reading(reading: SensorReadingIn, db: Session = Depends(get_db)):
+async def create_sensor_reading(reading: SensorReadingIn, db: Session = Depends(get_db)):
     """
-    Yeni bir sensör verisi alır ve veritabanına kaydeder.
+    Yeni bir sensör verisi alır ve Kafka'ya gönderir.
+    
+    NOT: Veri artık direkt DB'ye değil, Kafka üzerinden kaydediliyor.
+    Consumer servisi Kafka'dan okuyup DB'ye yazıyor.
+    Ancak response için geçici olarak DB'ye de yazıyoruz (hemen ID dönebilmek için).
+    
+    İleride: Sadece Kafka'ya gönder, response'da ID'siz dön (veya UUID kullan).
     """
+    # 1. Veriyi Kafka'ya gönder
+    try:
+        reading_dict = {
+            'sensor_id': reading.sensor_id,
+            'sensor_type': reading.sensor_type,
+            'value': reading.value,
+            'timestamp': reading.timestamp
+        }
+        await producer.publish_sensor_reading(reading_dict)
+        logger.info(f"Sensör verisi Kafka'ya gönderildi: {reading.sensor_id}")
+    except Exception as e:
+        logger.error(f"Kafka'ya gönderim hatası: {e}")
+        # Kafka hatası olsa bile devam et (DB'ye kaydet)
+        # Gerçek production'da bu durumu farklı handle edebilirsiniz
+    
+    # 2. Response için geçici olarak DB'ye de yaz (hemen ID almak için)
+    # Consumer da Kafka'dan okuyup DB'ye yazacak ama o asenkron
+    # Bu sayede API hemen response dönebilir
     db_reading = crud.create_sensor_reading(db, reading)
     return SensorReadingOut(
         id=db_reading.id,

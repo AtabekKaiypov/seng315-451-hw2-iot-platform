@@ -3,3 +3,9 @@ uvicorn[standard]==0.24.0
 sqlalchemy==2.0.23
 pydantic==2.5.0
 
+# Kafka messaging
+aiokafka==0.10.0
+
+# Testing (optional)
+requests==2.31.0
+
